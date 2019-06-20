@@ -128,6 +128,25 @@ resource "aws_volume_attachment" "volume-attachment" {
   volume_id    = "${element(aws_ebs_volume.volume.*.id, count.index)}"
   instance_id  = "${element(aws_instance.instance.*.id, count.index / local.num_extra_volumes)}"
   force_detach = true
+
+  # Fix for https://github.com/terraform-providers/terraform-provider-aws/issues/2084
+  provisioner "remote-exec" {
+    inline     = ["sudo poweroff"]
+    when       = "destroy"
+    on_failure = "continue"
+
+    connection {
+      host  = "${var.associate_public_ip_address ? element(aws_instance.instance.*.public_ip, count.index / local.num_extra_volumes) : element(aws_instance.instance.*.private_ip, count.index / local.num_extra_volumes)}"
+      user  = "${module.dcos-tested-oses.user}"
+      agent = true
+    }
+  }
+
+  # Make sure instance has had some time to power down before attempting volume detachment
+  provisioner "local-exec" {
+    command = "sleep 30"
+    when    = "destroy"
+  }
 }
 
 resource "null_resource" "instance-prereq" {
